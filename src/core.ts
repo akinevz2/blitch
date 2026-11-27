@@ -106,13 +106,13 @@ export function damagedRows(s: State): readonly number[] {
 }
 
 /** SPACE: jump the modification-event anchor to the NEXT damaged row
- * (wrap-around) and centre the viewport on it. */
+ * (wrap-around), bringing it onto the viewport's BOTTOM edge. */
 function jumpDamage(s: State): State {
   const rows = damagedRows(s);
   if (rows.length === 0) return clearPending(s);
   const cycle = (s.cycle + 1 + rows.length) % rows.length;
   const target = rows[cycle] ?? 0;
-  const row = clamp(target - Math.floor((s.height - 1) / 2), 0, maxRow(s));
+  const row = clamp(target - (s.height - 1), 0, maxRow(s));
   return { ...clearPending(s), cycle, row, cursor: target, follow: false };
 }
 

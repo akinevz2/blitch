@@ -308,7 +308,7 @@ describe('exit keys', () => {
     expect(s.cycle).toBe(0);
     expect(s.follow).toBe(false);
     const first = rows[0] ?? 0;
-    expect(s.row).toBe(Math.max(0, first - 1)); // centred (height 3)
+    expect(s.row).toBe(Math.max(0, first - (3 - 1))); // anchor on the BOTTOM edge (height 3)
     s = feedKeys(s, [ch(' ')]);
     expect(s.cycle).toBe(1);
     s = feedKeys(s, [ch(' ')]);
