@@ -1,0 +1,22 @@
+{
+  "name": "blitch",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "lint": "bun run src/lint.ts",
+    "build": "bun build --compile src/index.ts --outfile blitch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@bunli/core": "^0.9.1"
+  }
+}
