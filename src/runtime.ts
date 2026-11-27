@@ -8,11 +8,16 @@ import { consumeBar, createBus, drain, initialState, publish, transduce } from '
 import { renderBar, renderFrame } from './render.ts';
 import { editorProgram } from './editor.ts';
 import { readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
+import { basename, dirname } from 'node:path';
 import type { InputEvent, Key, NamedKey } from './types.ts';
 
 const ALT_ENTER = '\u001b[?1049h\u001b[?25l';
 const ALT_LEAVE = '\u001b[?25h\u001b[?1006l\u001b[?1000l\u001b[?1049l';
 const POLL_MS = 300;
+/** Trailing-edge debounce: one logical save fires several inotify events
+ *  (modify / close_write / moved_to …); events inside one window coalesce
+ *  into a single read+repaint. */
+const WATCH_DEBOUNCE_MS = 40;
 
 function decodeNamed(byte: number): NamedKey | null {
   switch (byte) {
@@ -290,9 +295,29 @@ export async function runView(file: string): Promise<number> {
   writeOut('\u001b[?1000h\u001b[?1006h');
 
   let watcher: FSWatcher | null = null;
-  try {
-    watcher = watch(file, { persistent: false }, () => {
+  // Debounced reporting: coalesce an event burst into ONE read+repaint.
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleReport = (): void => {
+    if (debounceTimer) return; // a burst is already pending: one report per window
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
       reportFile();
+    }, WATCH_DEBOUNCE_MS);
+  };
+  try {
+    // Watch the PARENT DIRECTORY filtered by basename: editors doing
+    // atomic saves (temp file + rename over the target) replace the
+    // file's inode, killing any watch registered on the file itself
+    // after the first save; the directory's inode is stable across
+    // renames, so the watch survives the swap (FAILURE-MODES A4.10
+    // family). The 300ms poll stays as the no-inotify fallback.
+    const base = basename(file);
+    const isTargetEvent = (name: string | Buffer | null): boolean => {
+      if (name === null) return true; // unknown name: report conservatively
+      return (typeof name === 'string' ? name : name.toString('utf8')) === base;
+    };
+    watcher = watch(dirname(file), { persistent: false }, (event: string, name: string | Buffer | null) => {
+      if (isTargetEvent(name)) scheduleReport();
     });
   } catch {
     watcher = null; // poll interval keeps livereload working without inotify
@@ -301,6 +326,7 @@ export async function runView(file: string): Promise<number> {
 
   const interrupted = (): void => {
     if (flushTimer) clearTimeout(flushTimer);
+    if (debounceTimer) clearTimeout(debounceTimer);
     restoreTerminal();
     watcher?.close();
     clearInterval(poll);
@@ -348,6 +374,7 @@ export async function runView(file: string): Promise<number> {
   }
 
   if (flushTimer) clearTimeout(flushTimer);
+  if (debounceTimer) clearTimeout(debounceTimer);
   watcher?.close();
   clearInterval(poll);
   restoreTerminal();
