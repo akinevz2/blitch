@@ -299,36 +299,46 @@ describe('exit keys', () => {
     expect(consumeBar(count.outputs) ?? '').toContain('blitch:5');
   });
 
-  test('zz cycles forward through damaged rows, centring each', () => {
+  test('space jumps to the next modification event with wrap-around', () => {
     const base = initialState('f', 'a\nb\nc\nd\ne', 'sig', 3); // viewport 3
     const edited = reduce({ t: 'file', sig: 's2', text: 'a\nB\nc\nD\ne\nF' }, base).state;
     const rows = damagedRows(edited);
     expect(rows.length).toBe(3); // B, D, F damaged
-    let s = feedKeys(edited, [ch('z'), ch('z')]);
+    let s = feedKeys(edited, [ch(' ')]);
     expect(s.cycle).toBe(0);
     expect(s.follow).toBe(false);
     const first = rows[0] ?? 0;
     expect(s.row).toBe(Math.max(0, first - 1)); // centred (height 3)
-    s = feedKeys(s, [ch('z'), ch('z')]);
+    s = feedKeys(s, [ch(' ')]);
     expect(s.cycle).toBe(1);
-    s = feedKeys(s, [ch('z'), ch('z')]);
+    s = feedKeys(s, [ch(' ')]);
     expect(s.cycle).toBe(2);
-    s = feedKeys(s, [ch('z'), ch('z')]);
-    expect(s.cycle).toBe(0); // wraps forward
+    s = feedKeys(s, [ch(' ')]);
+    expect(s.cycle).toBe(0); // wraps around
   });
 
-  test('space cycles in reverse order through damaged rows', () => {
+  test('zz navigates to the previous modification event (reverse, wrap)', () => {
     const base = initialState('f', 'a\nb\nc\nd\ne', 'sig', 3);
     const edited = reduce({ t: 'file', sig: 's2', text: 'a\nB\nc\nD\ne\nF' }, base).state;
-    let s = feedKeys(edited, [ch('z'), ch('z')]); // forward to first
+    let s = feedKeys(edited, [ch(' ')]);          // forward: anchor first damaged row
     expect(s.cycle).toBe(0);
-    s = feedKeys(s, [ch(' ')]);
-    expect(s.cycle).toBe(2); // reverse wraps to the last damaged row
+    s = feedKeys(s, [ch('z'), ch('z')]);          // previous: wraps to the LAST damaged row
+    expect(s.cycle).toBe(2);
+    expect(s.cursor).toBe((damagedRows(edited))[2]);
+    s = feedKeys(s, [ch('z'), ch('z')]);          // previous again
+    expect(s.cycle).toBe(1);
   });
 
   test('zz with no session damage is a no-op', () => {
     const s = feedKeys(makeState(), [ch('z'), ch('z')]);
     expect(s.cycle).toBe(-1);
+  });
+
+  test('gg places the cursor on the top line; G on the bottom line', () => {
+    let s = feedKeys(makeState(), [ch('g'), ch('g')]);
+    expect(s.cursor).toBe(0);
+    s = feedKeys(makeState(), [ch('G')]);
+    expect(s.cursor).toBe(49);
   });
 
   test('solo q exits viewing mode', () => {

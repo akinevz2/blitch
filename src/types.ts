@@ -84,8 +84,11 @@ export interface State {
   readonly pendingG: boolean;
   readonly pendingZ: boolean;
   readonly pendingZLower: boolean;
-  /** cycle index into the session's damaged rows (zz / space cycling) */
+  /** cycle index into the session's damaged rows (space cycling) */
   readonly cycle: number;
+  /** the cursor: a tracked view row — the ultimate visible line unless a
+   * motion (gg/G/space) placed it explicitly; rides the viewport on scroll */
+  readonly cursor: number;
   readonly search: SearchState;
   readonly cmd: CmdState;
   /** session-long damage memo, keyed by stable LINE ID (not content —

@@ -49,6 +49,7 @@ export function initialState(file: string, text: string, sig: string, height: nu
     pendingZ: false,
     pendingZLower: false,
     cycle: -1,
+    cursor: Math.max(0, boot.view.length - 1), // ultimate visible line at startup
     search: { active: false, query: '', backward: false, lastQuery: '', lastDir: 'fwd', anchor: 0 },
     cmd: { active: false, buffer: '' },
     scheme: 'normal',
@@ -71,7 +72,10 @@ function moveRows(s: State, delta: number): State {
   // not from the stale state.row (the jump-to-beginning bug)
   const base = s.follow ? maxRow(s) : s.row;
   const row = clamp(base + delta, 0, maxRow(s));
-  return { ...s, row, follow: false };
+  // the cursor rides the viewport: it is always the ULTIMATE VISIBLE line
+  // of the text file while scrolling (explicit placements come from gg/G/space)
+  const cursor = Math.min(row + s.height - 1, s.view.length - 1);
+  return { ...s, row, cursor, follow: false };
 }
 
 function moveCols(s: State, delta: number): State {
@@ -101,17 +105,26 @@ export function damagedRows(s: State): readonly number[] {
   return out;
 }
 
-/** Cycle through damaged rows: dir +1 = zz forward, -1 = space reverse.
- * The damaged row is centred in the viewport (vim zz heritage). */
-function cycleDamage(s: State, dir: number): State {
+/** SPACE: jump the modification-event anchor to the NEXT damaged row
+ * (wrap-around) and centre the viewport on it. */
+function jumpDamage(s: State): State {
   const rows = damagedRows(s);
   if (rows.length === 0) return clearPending(s);
-  const cycle = s.cycle < 0
-    ? (dir > 0 ? 0 : rows.length - 1)
-    : (s.cycle + dir + rows.length) % rows.length;
+  const cycle = (s.cycle + 1 + rows.length) % rows.length;
   const target = rows[cycle] ?? 0;
   const row = clamp(target - Math.floor((s.height - 1) / 2), 0, maxRow(s));
-  return { ...clearPending(s), cycle, row, follow: false };
+  return { ...clearPending(s), cycle, row, cursor: target, follow: false };
+}
+
+/** ZZ-lower (zz): navigate to the PREVIOUS modification event (reverse
+ * direction, wrap-around) and centre the viewport on it. */
+function previousDamage(s: State): State {
+  const rows = damagedRows(s);
+  if (rows.length === 0) return clearPending(s);
+  const cycle = s.cycle < 0 ? rows.length - 1 : (s.cycle - 1 + rows.length) % rows.length;
+  const target = rows[cycle] ?? 0;
+  const row = clamp(target - Math.floor((s.height - 1) / 2), 0, maxRow(s));
+  return { ...clearPending(s), cycle, row, cursor: target, follow: false };
 }
 
 function countOf(s: State): number {
@@ -260,12 +273,12 @@ function onNormalKey(key: InputEvent & { t: 'key' }, s: State): Transition {
       return { state: clearPending(s), outputs: [{ t: 'exit', code: 0 }] };
     case 'z': {
       if (s.pendingZLower) {
-        return { state: cycleDamage(s, 1), outputs: [] };
+        return { state: previousDamage(s), outputs: [] };
       }
       return { state: { ...s, pendingZLower: true, pendingCount: null, pendingG: false, pendingZ: false }, outputs: [] };
     }
     case ' ':
-      return { state: cycleDamage(s, -1), outputs: [] };
+      return { state: jumpDamage(s), outputs: [] };
     case 'j':
       return { state: clearPending(moveRows(s, countOf(s))), outputs: [] };
     case 'k':
@@ -277,16 +290,17 @@ function onNormalKey(key: InputEvent & { t: 'key' }, s: State): Transition {
     case 'g': {
       if (s.pendingG) {
         const target = s.pendingCount === null ? 0 : clamp(s.pendingCount - 1, 0, maxRow(s));
-        return { state: clearPending({ ...s, row: target, follow: false }), outputs: [] };
+        return { state: clearPending({ ...s, row: target, cursor: target, follow: false }), outputs: [] };
       }
       return { state: { ...s, pendingCount: s.pendingCount, pendingG: true }, outputs: [] };
     }
     case 'G': {
       if (s.pendingCount !== null) {
         const target = clamp(s.pendingCount - 1, 0, maxRow(s));
-        return { state: clearPending({ ...s, row: target, follow: false }), outputs: [] };
+        return { state: clearPending({ ...s, row: target, cursor: target, follow: false }), outputs: [] };
       }
-      return { state: clearPending({ ...s, row: maxRow(s), follow: true }), outputs: [] };
+      const cursor = s.view.length - 1;
+      return { state: clearPending({ ...s, row: maxRow(s), cursor, follow: true }), outputs: [] };
     }
     case 'n': {
       if (s.search.lastQuery.length === 0) return { state: clearPending(s), outputs: [] };
@@ -342,7 +356,9 @@ function onFileUpdate(event: InputEvent & { t: 'file' }, s: State): Transition {
     damage: { ...projection.damage },
     lineIds: projection.lineIds,
   };
-  const withFollow: State = next.follow ? { ...next, row: Math.max(0, view.length - s.height) } : { ...next, row: clamp(next.row, 0, maxRow(next)) };
+  const withFollow: State = next.follow
+    ? { ...next, row: Math.max(0, view.length - s.height), cursor: Math.max(0, view.length - 1) }
+    : { ...next, row: clamp(next.row, 0, maxRow(next)), cursor: clamp(next.cursor, 0, Math.max(0, view.length - 1)) };
   return { state: withFollow, outputs: [] };
 }
 

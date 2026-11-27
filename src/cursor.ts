@@ -14,11 +14,12 @@ export interface Cursor {
   readonly fileLine: number;
 }
 
-/** The cursor's view row: the last visible row of the viewport. */
+/** The cursor's view row: the tracked cursor, clamped into the viewport. */
 export function cursorRow(s: State): number {
   const maxRow = Math.max(0, s.view.length - s.height);
   const top = s.follow ? maxRow : Math.min(s.row, maxRow);
-  return Math.max(top, Math.min(top + s.height - 1, s.view.length - 1));
+  const cursor = s.cursor >= 0 ? s.cursor : top + s.height - 1;
+  return Math.max(top, Math.min(cursor, Math.min(top + s.height - 1, s.view.length - 1)));
 }
 
 /** Map a view row onto the file's 1-based line numbering, skipping ghosts. */
