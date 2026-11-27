@@ -26,9 +26,9 @@ export function bar(payload: string): string {
 }
 
 /**
- * Temporal-marker suffix: ` +a -g ~r` counting green additions, red ghost
- * rows and yellow replacement ropes in the view. Empty when the view is
- * clean.
+ * Temporal-marker suffix in word-count-delta notation: `d_wc(+a)` for
+ * added rows, `d_wc(-g)` for deleted (ghost) rows, both `d_wc(+a,-g)`;
+ * replacement ropes count via `d_rc(~r)`. Empty when the view is clean.
  */
 export function diffSuffix(state: State): string {
   let adds = 0;
@@ -45,10 +45,19 @@ export function diffSuffix(state: State): string {
     }
   }
   let out = '';
-  if (adds > 0) out += ' +' + String(adds);
-  if (ghosts > 0) out += ' -' + String(ghosts);
-  if (repls > 0) out += ' ~' + String(repls);
+  if (adds > 0 && ghosts > 0) out += ' d_wc(+' + String(adds) + ',-' + String(ghosts) + ')';
+  else if (adds > 0) out += ' d_wc(+' + String(adds) + ')';
+  else if (ghosts > 0) out += ' d_wc(-' + String(ghosts) + ')';
+  if (repls > 0) out += ' d_rc(~' + String(repls) + ')';
   return out;
+}
+
+/** Entropy working count ` e_wc(n)`: DISTINCT lines damaged since session
+ * launch (the damage memo is keyed by line content, so multiple edits on
+ * the same line contribute once — they never stack). */
+export function eSuffix(state: State): string {
+  const n = Object.keys(state.damage).length;
+  return n > 0 ? ' e_wc(' + String(n) + ')' : '';
 }
 
 /** Horizontal-offset suffix ` col:{n}` (ASCII-safe); empty at column zero. */

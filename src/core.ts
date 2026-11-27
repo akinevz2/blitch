@@ -36,7 +36,8 @@ export function initialState(file: string, text: string, sig: string, height: nu
     sig,
     oldText: '',
     text,
-    view: projectView('', text),
+    view: projectView('', text).view,
+    damage: {},
     row: 0,
     col: 0,
     follow: true,
@@ -44,6 +45,8 @@ export function initialState(file: string, text: string, sig: string, height: nu
     pendingCount: null,
     pendingG: false,
     pendingZ: false,
+    pendingZLower: false,
+    cycle: -1,
     search: { active: false, query: '', backward: false, lastQuery: '', lastDir: 'fwd', anchor: 0 },
     cmd: { active: false, buffer: '' },
     scheme: 'normal',
@@ -74,7 +77,39 @@ function moveCols(s: State, delta: number): State {
 }
 
 function clearPending(s: State): State {
-  return { ...s, pendingCount: null, pendingG: false, pendingZ: false };
+  return { ...s, pendingCount: null, pendingG: false, pendingZ: false, pendingZLower: false };
+}
+
+/**
+ * Rows damaged in this session, in file order: ghost rows, rows with live
+ * diff damage, and unchanged rows carrying accumulated damage-memo entries.
+ */
+export function damagedRows(s: State): readonly number[] {
+  const out: number[] = [];
+  for (let r = 0; r < s.view.length; r += 1) {
+    const vl = s.view[r];
+    if (!vl) continue;
+    if (vl.ghost || vl.segs.some((sg) => sg.kind !== 'same')) {
+      out.push(r);
+      continue;
+    }
+    const memo = s.damage[lineText(vl.segs)];
+    if (memo && memo !== 'same') out.push(r);
+  }
+  return out;
+}
+
+/** Cycle through damaged rows: dir +1 = zz forward, -1 = space reverse.
+ * The damaged row is centred in the viewport (vim zz heritage). */
+function cycleDamage(s: State, dir: number): State {
+  const rows = damagedRows(s);
+  if (rows.length === 0) return clearPending(s);
+  const cycle = s.cycle < 0
+    ? (dir > 0 ? 0 : rows.length - 1)
+    : (s.cycle + dir + rows.length) % rows.length;
+  const target = rows[cycle] ?? 0;
+  const row = clamp(target - Math.floor((s.height - 1) / 2), 0, maxRow(s));
+  return { ...clearPending(s), cycle, row, follow: false };
 }
 
 function countOf(s: State): number {
@@ -221,6 +256,14 @@ function onNormalKey(key: InputEvent & { t: 'key' }, s: State): Transition {
       return { state: modalEnter(clearPending({ ...s, cmd: { active: true, buffer: '' } }), 'command-line'), outputs: [] };
     case 'q':
       return { state: clearPending(s), outputs: [{ t: 'exit', code: 0 }] };
+    case 'z': {
+      if (s.pendingZLower) {
+        return { state: cycleDamage(s, 1), outputs: [] };
+      }
+      return { state: { ...s, pendingZLower: true, pendingCount: null, pendingG: false, pendingZ: false }, outputs: [] };
+    }
+    case ' ':
+      return { state: cycleDamage(s, -1), outputs: [] };
     case 'j':
       return { state: clearPending(moveRows(s, countOf(s))), outputs: [] };
     case 'k':
@@ -286,8 +329,9 @@ export function projectFileEvents(events: readonly InputEvent[], currentSig: str
 
 function onFileUpdate(event: InputEvent & { t: 'file' }, s: State): Transition {
   if (event.sig === s.sig) return { state: s, outputs: [] };
-  const view = projectView(s.text, event.text);
-  const next: State = { ...s, sig: event.sig, oldText: s.text, text: event.text, view };
+  const projection = projectView(s.text, event.text, s.damage);
+  const view = projection.view;
+  const next: State = { ...s, sig: event.sig, oldText: s.text, text: event.text, view, damage: { ...projection.damage } };
   const withFollow: State = next.follow ? { ...next, row: Math.max(0, view.length - s.height) } : { ...next, row: clamp(next.row, 0, maxRow(next)) };
   return { state: withFollow, outputs: [] };
 }

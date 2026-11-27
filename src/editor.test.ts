@@ -27,9 +27,9 @@ describe('editor kind detection', () => {
 });
 
 describe('editor argv shaping', () => {
-  test('vim-family opens at +line', () => {
-    expect(editorCommand('vim', 'f.txt', 42)).toEqual(['vim', '+42', 'f.txt']);
-    expect(editorCommand('nvim', 'f.txt', 7)).toEqual(['nvim', '+7', 'f.txt']);
+  test('vim-family opens at +line and scrolls it to the viewport top (zt)', () => {
+    expect(editorCommand('vim', 'f.txt', 42)).toEqual(['vim', '+42', '-c', 'normal! zt', 'f.txt']);
+    expect(editorCommand('nvim', 'f.txt', 7)).toEqual(['nvim', '+7', '-c', 'normal! zt', 'f.txt']);
   });
 
   test('vscode opens via --goto file:line', () => {
@@ -46,7 +46,7 @@ describe('monadic editor program', () => {
     const s = initialState('f', LINES.join('\n'), 'sig', 10); // follows: viewport top row 40
     const [invocation] = editorProgram('vim', 'f.txt').run(s);
     expect(invocation.line).toBe(41); // 1-based
-    expect(invocation.argv).toEqual(['vim', '+41', 'f.txt']);
+    expect(invocation.argv).toEqual(['vim', '+41', '-c', 'normal! zt', 'f.txt']);
   });
 
   test('reads a manual scroll position unfollowed', () => {

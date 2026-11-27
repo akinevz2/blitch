@@ -177,12 +177,23 @@ function lcsOps(a: string, b: string): readonly DiffOp[] {
  * diffed inline; unpaired deletions linger as red ghost rows anchored at
  * the line that now precedes them. An empty oldText renders as the initial
  * cat-like view: plain, no temporal markers.
+ *
+ * Damage accumulates across the session: `prior` maps line content to the
+ * most recent damage kind seen since blitch launched; the returned `damage`
+ * carries it forward so saving/reentering the editor never fades markers.
  */
-export function projectView(oldText: string, newText: string): readonly ViewLine[] {
+export function projectView(
+  oldText: string,
+  newText: string,
+  prior: Readonly<Record<string, DiffKind>> = {},
+): { view: readonly ViewLine[]; damage: Readonly<Record<string, DiffKind>> } {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   if (oldText.length === 0) {
-    return newLines.map((line: string): ViewLine => ({ segs: [{ text: line, kind: 'same' }], ghost: false }));
+    return {
+      view: newLines.map((line: string): ViewLine => ({ segs: [{ text: line, kind: 'same' }], ghost: false })),
+      damage: {},
+    };
   }
 
   const nOld = oldLines.length;
@@ -240,19 +251,47 @@ export function projectView(oldText: string, newText: string): readonly ViewLine
     }
   }
 
-  // pair additions with deletions by order -> inline diffs
+  // pair additions with deletions by POSITION PROXIMITY (nearest unused
+  // index), not by order — mid-line edits must pair with their own previous
+  // version, never spawn ghosts for other lines' deletions
   const pairCount = Math.min(added.length, deleted.length);
-  for (let k = 0; k < pairCount; k += 1) {
-    const addIdx = added[k];
-    const delIdx = deleted[k];
-    const addLine = addIdx !== undefined ? (newLines[addIdx] ?? '') : '';
-    const delLine = delIdx !== undefined ? (oldLines[delIdx] ?? '') : '';
-    const target = addIdx !== undefined ? rows[addIdx] : undefined;
-    if (target) {
-      rows[addIdx] = { segs: diffText(delLine, addLine), ghost: false };
+  const usedDeleted = new Set<number>();
+  for (const addIdx of added.slice(0, pairCount)) {
+    let best = -1;
+    let bestDist = Number.MAX_SAFE_INTEGER;
+    for (const delIdx of deleted) {
+      if (usedDeleted.has(delIdx)) continue;
+      const dist = Math.abs(delIdx - addIdx);
+      if (dist < bestDist) {
+        best = delIdx;
+        bestDist = dist;
+      }
     }
+    if (best >= 0) usedDeleted.add(best);
+    const delLine = oldLines[best] ?? '';
+    const addLine = newLines[addIdx] ?? '';
+    rows[addIdx] = { segs: diffText(delLine, addLine), ghost: false };
   }
-  const unpairedDeleted = deleted.slice(pairCount);
+  const unpairedDeleted = deleted.filter((d: number): boolean => !usedDeleted.has(d));
+
+  // damage accumulation: session-long memo folded through every update
+  const damage: Record<string, DiffKind> = { ...prior };
+  const accumulate = (content: string, kind: DiffKind): void => {
+    if (kind === 'same') return;
+    const prev = damage[content] ?? 'same';
+    damage[content] = prev === 'same' || prev === kind ? kind : 'repl';
+  };
+  for (const addIdx of added) {
+    accumulate(newLines[addIdx] ?? '', 'add');
+  }
+  for (const delIdx of deleted) {
+    accumulate(oldLines[delIdx] ?? '', 'del');
+  }
+  // paired (replacement) lines: their damage kind is repl — add wins over
+  // the del just recorded for the same content pair
+  for (const addIdx of added.slice(0, pairCount)) {
+    accumulate(newLines[addIdx] ?? '', 'repl');
+  }
   // ghosts anchored before the line that now precedes them
   const ghostsByAnchor = new Map<number, ViewLine[]>();
   for (const delIdx of unpairedDeleted) {
@@ -265,5 +304,5 @@ export function projectView(oldText: string, newText: string): readonly ViewLine
   for (const [anchor, ghosts] of ghostsByAnchor) {
     rows.splice(anchor, 0, ...ghosts);
   }
-  return rows;
+  return { view: rows, damage };
 }

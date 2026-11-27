@@ -148,7 +148,7 @@ describe('normal modal', () => {
         { segs: [{ text: 'was\u0000now', kind: 'repl' }], ghost: false },
       ],
     };
-    expect(renderStatusBar(changed)).toBe('\u001b[7mblitch: +1 -1 ~1\u001b[0m');
+    expect(renderStatusBar(changed)).toBe('\u001b[7mblitch: d_wc(+1,-1) d_rc(~1)\u001b[0m');
   });
 });
 

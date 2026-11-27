@@ -2,8 +2,14 @@
 // transformation. Green = added bytes, red = deleted tokens/ghost ropes,
 // yellow = replaced ropes. No margins, no line numbers, no chrome.
 
-import type { Seg, State } from './types.ts';
+import type { DiffKind, Seg, State } from './types.ts';
 import { renderStatusBar } from './status/index.ts';
+
+function lineText(segs: readonly Seg[]): string {
+  let out = '';
+  for (const sg of segs) out += sg.text;
+  return out;
+}
 
 const GREEN = '\u001b[32m';
 const RED = '\u001b[31m';
@@ -69,7 +75,9 @@ export function renderBar(state: State): string {
   return renderStatusBar(state);
 }
 
-/** Build the visible frame: exactly `height` rows of the view, cat-style. */
+/** Build the visible frame: exactly `height` rows of the view, cat-style.
+ * Rows unchanged in the latest update still show their ACCUMULATED session
+ * damage (the damage memo folded through every update since launch). */
 export function renderFrame(state: State): string {
   const height = Math.max(1, state.height);
   const maxRow = Math.max(0, state.view.length - height);
@@ -81,7 +89,11 @@ export function renderFrame(state: State): string {
   for (let i = row; i < row + height && i < state.view.length; i += 1) {
     const vl = state.view[i];
     if (!vl) continue;
-    rows.push(renderRow(vl.segs, state.col, highlight));
+    const mem = vl.segs.every((sg) => sg.kind === 'same') ? state.damage[lineText(vl.segs)] : undefined;
+    const effective = mem && mem !== 'same'
+      ? { ...vl, segs: vl.segs.map((sg) => ({ ...sg, kind: mem })) }
+      : vl;
+    rows.push(renderRow(effective.segs, state.col, highlight));
   }
   return rows.join('\n');
 }

@@ -81,8 +81,13 @@ export interface State {
   readonly pendingCount: number | null;
   readonly pendingG: boolean;
   readonly pendingZ: boolean;
+  readonly pendingZLower: boolean;
+  /** cycle index into the session's damaged rows (zz / space cycling) */
+  readonly cycle: number;
   readonly search: SearchState;
   readonly cmd: CmdState;
+  /** session-long per-line damage memo (blitted across updates) */
+  readonly damage: Readonly<Record<string, DiffKind>>;
   /** cached current input scheme; kept in lockstep by the mode transitions */
   readonly scheme: InputScheme;
   /** event generation: bumped on every scheme entry; stale-batch guards */

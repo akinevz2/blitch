@@ -2,10 +2,11 @@
 // projection and the diff colour semantics. All pure — no tty, no IO.
 
 import { describe, expect, test } from 'bun:test';
-import { initialState, projectFileEvents, reduce, transduce, consumeBar, createBus, publish, drain } from './core.ts';
+import { damagedRows, initialState, projectFileEvents, reduce, transduce, consumeBar, createBus, publish, drain } from './core.ts';
 import { lastMonoid } from './monoid.ts';
 import { diffText, projectView } from './diff.ts';
 import { renderFrame, renderBar } from './render.ts';
+import { editorProgram } from './editor.ts';
 import type { InputEvent, Key, NamedKey, State } from './types.ts';
 
 const LINES: string[] = Array.from({ length: 50 }, (_: undefined, i: number): string => `line${i + 1}`);
@@ -298,6 +299,38 @@ describe('exit keys', () => {
     expect(consumeBar(count.outputs) ?? '').toContain('blitch:5');
   });
 
+  test('zz cycles forward through damaged rows, centring each', () => {
+    const base = initialState('f', 'a\nb\nc\nd\ne', 'sig', 3); // viewport 3
+    const edited = reduce({ t: 'file', sig: 's2', text: 'a\nB\nc\nD\ne\nF' }, base).state;
+    const rows = damagedRows(edited);
+    expect(rows.length).toBe(3); // B, D, F damaged
+    let s = feedKeys(edited, [ch('z'), ch('z')]);
+    expect(s.cycle).toBe(0);
+    expect(s.follow).toBe(false);
+    const first = rows[0] ?? 0;
+    expect(s.row).toBe(Math.max(0, first - 1)); // centred (height 3)
+    s = feedKeys(s, [ch('z'), ch('z')]);
+    expect(s.cycle).toBe(1);
+    s = feedKeys(s, [ch('z'), ch('z')]);
+    expect(s.cycle).toBe(2);
+    s = feedKeys(s, [ch('z'), ch('z')]);
+    expect(s.cycle).toBe(0); // wraps forward
+  });
+
+  test('space cycles in reverse order through damaged rows', () => {
+    const base = initialState('f', 'a\nb\nc\nd\ne', 'sig', 3);
+    const edited = reduce({ t: 'file', sig: 's2', text: 'a\nB\nc\nD\ne\nF' }, base).state;
+    let s = feedKeys(edited, [ch('z'), ch('z')]); // forward to first
+    expect(s.cycle).toBe(0);
+    s = feedKeys(s, [ch(' ')]);
+    expect(s.cycle).toBe(2); // reverse wraps to the last damaged row
+  });
+
+  test('zz with no session damage is a no-op', () => {
+    const s = feedKeys(makeState(), [ch('z'), ch('z')]);
+    expect(s.cycle).toBe(-1);
+  });
+
   test('solo q exits viewing mode', () => {
     const codes = exitCodes(makeState(), [ch('q')]);
     expect(codes).toEqual([0]);
@@ -439,7 +472,7 @@ describe('diff semantics', () => {
   });
 
   test('unpaired deleted lines linger as red ghosts clustered at the deletion site', () => {
-    const view = projectView('a\nb\nc\nd\ne', 'a\nd\ne');
+    const { view } = projectView('a\nb\nc\nd\ne', 'a\nd\ne');
     const texts = view.map((v) => v.segs.map((s) => s.text).join(''));
     expect(texts).toEqual(['a', 'b', 'c', 'd', 'e']); // ghosts of b and c grouped before d
     expect(view[1]?.ghost).toBe(true);
@@ -450,8 +483,34 @@ describe('diff semantics', () => {
   });
 
   test('initial projection is cat-plain (no temporal markers)', () => {
-    const view = projectView('', 'a\nb');
+    const { view } = projectView('', 'a\nb');
     expect(view.every((v) => v.segs.every((s) => s.kind === 'same'))).toBe(true);
+  });
+
+  test('damage accumulates across saves (session-long memo)', () => {
+    // line c is edited, then later restored to its original content — the
+    // damage marker must persist (blitted memo), not fade on the clean save
+    const first = projectView('a\nb\nc', 'a\nb\nC'); // c damaged
+    expect(first.damage.C).toBe('repl'); // new content: replacement rope
+    expect(first.damage.c).toBe('del'); // old content: deleted
+    const second = projectView('a\nb\nC', 'a\nb\nc', first.damage); // edited back: repl + del -> repl
+    expect(second.damage.c).toBe('repl');
+    const third = projectView('a\nb\nC', 'a\nb\nc', second.damage);
+    expect(third.damage.c).toBe('repl'); // still damaged
+    // a later save that does NOT touch the line: clean segs in the diff...
+    const clean = projectView('a\nb\nc', 'a\nb\nc', third.damage);
+    expect(clean.view[2]?.segs.every((s) => s.kind === 'same')).toBe(true);
+    // ...but the accumulated damage is still rendered by renderFrame
+    const base = initialState('f', 'a\nb\nC', 'sig', 10);
+    const frame = renderFrame(reduce({ t: 'file', sig: 'sig2', text: 'a\nb\nc' }, base).state);
+    expect(frame).toContain('\u001b[33m'); // memo overlay still yellow
+  });
+
+  test('editor target line excludes ghost rows (deletion damage not forwarded)', () => {
+    const s = initialState('f', 'a\nb\nc\nd\ne', 'sig', 10);
+    const scrolled = { ...s, row: 3, follow: false }; // view row 3 = 'd' (file line 4)
+    const [invocation] = editorProgram('vim', 'f.txt').run(scrolled);
+    expect(invocation.line).toBe(4);
   });
 
   test('bottom bar is a monoidal consumer: live prompt, wiped when inactive', () => {
