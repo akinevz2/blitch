@@ -6,6 +6,7 @@
 
 import { consumeBar, createBus, drain, initialState, publish, transduce } from './core.ts';
 import { renderBar, renderFrame } from './render.ts';
+import { editorProgram } from './editor.ts';
 import { readFileSync, statSync, watch, type FSWatcher } from 'node:fs';
 import type { InputEvent, Key, NamedKey } from './types.ts';
 
@@ -39,6 +40,7 @@ export interface KeyDecoder {
   readonly feed: (chunk: string) => readonly InputEvent[];
   readonly flush: () => readonly InputEvent[];
   readonly hasPending: () => boolean;
+  readonly reset: () => void;
 }
 
 interface Cursor { pos: number }
@@ -130,6 +132,10 @@ export function createKeyDecoder(): KeyDecoder {
       return events;
     },
     hasPending: (): boolean => pending.length > 0,
+    reset: (): void => {
+      pending = '';
+      cursor = { pos: 0 };
+    },
   };
   return decoder;
 }
@@ -229,9 +235,15 @@ export async function runView(file: string): Promise<number> {
       // already cooked
     }
     const editor = process.env.EDITOR ?? 'vim';
-    const proc = Bun.spawn([editor, file], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' });
+    const [invocation] = editorProgram(editor, file).run(live);
+    const proc = Bun.spawn([...invocation.argv], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' });
     await proc.exited;
     stdin.resume();
+    decoder.reset(); // editor-era bytes must not leak into the viewer
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
     try {
       stdin.setRawMode(true);
     } catch {
@@ -260,6 +272,7 @@ export async function runView(file: string): Promise<number> {
       if (flushTimer) clearTimeout(flushTimer);
       flushTimer = setTimeout(() => {
         flushTimer = null;
+        if (editing) return; // stale vim-era bytes: never publish across the editor boundary
         const flushed = decoder.flush();
         if (flushed.length > 0) {
           publish(bus, flushed);

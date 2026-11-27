@@ -24,7 +24,9 @@ function pushOp(ops: DiffOp[], kind: DiffKind, text: string): void {
   ops.push({ kind, text });
 }
 
-/** Merge an adjacent del+add pair (either order) into one replacement rope. */
+/** Merge an adjacent del+add pair (either order) into one replacement rope
+ * carrying only the NEW content — the view is a blitted damage map of the
+ * file's rope, not a side-by-side diff; previous content is omitted. */
 function mergeReplacements(ops: readonly DiffOp[]): readonly DiffOp[] {
   const out: DiffOp[] = [];
   let i = 0;
@@ -32,10 +34,9 @@ function mergeReplacements(ops: readonly DiffOp[]): readonly DiffOp[] {
     const cur = ops[i];
     const next = ops[i + 1];
     if (next && ((cur.kind === 'del' && next.kind === 'add') || (cur.kind === 'add' && next.kind === 'del'))) {
-      const delText = cur.kind === 'del' ? cur.text : next.text;
       const addText = cur.kind === 'add' ? cur.text : next.text;
-      if (delText.length > 0 && addText.length > 0) {
-        out.push({ kind: 'repl', text: delText + '\u0000' + addText });
+      if (addText.length > 0) {
+        out.push({ kind: 'repl', text: addText });
         i += 2;
         continue;
       }
@@ -108,13 +109,30 @@ export function diffText(a: string, b: string): readonly Seg[] {
   if (a === b) {
     return a.length > 0 ? [{ text: a, kind: 'same' }] : [];
   }
-  let ops: readonly DiffOp[];
-  if (a.length * b.length > MAX_LCS_CELLS || a.length === 0 || b.length === 0) {
-    ops = wholeSpanOps(a, b);
-  } else {
-    ops = lcsOps(a, b);
+  // trim the common prefix/suffix FIRST so a substitution becomes an
+  // adjacent del+add pair (merged into one replacement rope) instead of a
+  // del ... add straddling an unchanged run
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p += 1;
+  let sa = a.length;
+  let sb = b.length;
+  while (sa > p && sb > p && a[sa - 1] === b[sb - 1]) {
+    sa -= 1;
+    sb -= 1;
   }
-  return snapDeletesToTokens(ops, a).map((op) => ({ text: op.text, kind: op.kind }));
+  const ops: DiffOp[] = [];
+  if (p > 0) pushOp(ops, 'same', a.slice(0, p));
+  const midA = a.slice(p, sa);
+  const midB = b.slice(p, sb);
+  if (midA.length === 0 || midB.length === 0 || midA.length * midB.length > MAX_LCS_CELLS) {
+    if (midA.length > 0) pushOp(ops, 'del', midA);
+    if (midB.length > 0) pushOp(ops, 'add', midB);
+  } else {
+    for (const op of lcsOps(midA, midB)) ops.push(op);
+  }
+  if (sa < a.length) pushOp(ops, 'same', a.slice(sa));
+  const trimmed = ops.filter((op) => op.text.length > 0);
+  return snapDeletesToTokens(trimmed, a).map((op) => ({ text: op.text, kind: op.kind }));
 }
 
 function lcsOps(a: string, b: string): readonly DiffOp[] {

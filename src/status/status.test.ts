@@ -111,12 +111,12 @@ describe('follow modal', () => {
     const tailing: State = makeState(); // the initial state follows the tail
     const manual: State = { ...tailing, follow: false };
     boundary(follow, tailing, manual);
-    expect(renderStatusBar(tailing)).toBe('\u001b[7mblitch: \u2301tail\u001b[0m');
+    expect(renderStatusBar(tailing)).toBe('\u001b[7mblitch: \u001b[32m*\u001b[39mtail\u001b[0m');
   });
 
   test('carries the column suffix while tailing', () => {
     const state: State = { ...makeState(), col: 3 };
-    expect(renderStatusBar(state)).toBe('\u001b[7mblitch: \u2301tail \u21923\u001b[0m');
+    expect(renderStatusBar(state)).toBe('\u001b[7mblitch: \u001b[32m*\u001b[39mtail col:3\u001b[0m');
   });
 });
 
@@ -133,7 +133,7 @@ describe('normal modal', () => {
     const bottom: State = { ...makeState(), follow: false, row: 40 }; // maxRow 40
     expect(renderStatusBar(bottom)).toBe('\u001b[7mblitch: [bottom]\u001b[0m');
     const offset: State = { ...makeState(), follow: false, col: 12 };
-    expect(renderStatusBar(offset)).toBe('\u001b[7mblitch: \u219212\u001b[0m');
+    expect(renderStatusBar(offset)).toBe('\u001b[7mblitch: col:12\u001b[0m');
   });
 
   test('renders temporal diff markers: additions, ghosts, replacements', () => {
@@ -175,7 +175,7 @@ describe('status registry dispatch', () => {
     const goneTailing: State = { ...makeState(), sig: 'gone', follow: true };
     expect(renderStatusBar(goneTailing)).toBe('\u001b[7mblitch:<file gone>\u001b[0m');
     const tailing: State = makeState();
-    expect(renderStatusBar(tailing)).toBe('\u001b[7mblitch: \u2301tail\u001b[0m');
+    expect(renderStatusBar(tailing)).toBe('\u001b[7mblitch: \u001b[32m*\u001b[39mtail\u001b[0m');
   });
 
   test('registry order is fixed and terminates in the always-matching normal modal', () => {

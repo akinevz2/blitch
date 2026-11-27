@@ -50,6 +50,9 @@ export type OutputEvent =
 
 export type SearchDir = 'fwd' | 'bwd';
 
+/** The current input scheme (mode): determines event interpretation. */
+export type InputScheme = 'normal' | 'search-forward' | 'search-backward' | 'command-line';
+
 export interface SearchState {
   readonly active: boolean;
   readonly query: string;
@@ -80,6 +83,10 @@ export interface State {
   readonly pendingZ: boolean;
   readonly search: SearchState;
   readonly cmd: CmdState;
+  /** cached current input scheme; kept in lockstep by the mode transitions */
+  readonly scheme: InputScheme;
+  /** event generation: bumped on every scheme entry; stale-batch guards */
+  readonly generation: number;
   readonly height: number;
 }
 

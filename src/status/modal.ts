@@ -51,7 +51,7 @@ export function diffSuffix(state: State): string {
   return out;
 }
 
-/** Horizontal-offset suffix ` →{col}`; empty at column zero. */
+/** Horizontal-offset suffix ` col:{n}` (ASCII-safe); empty at column zero. */
 export function colSuffix(state: State): string {
-  return state.col > 0 ? ' \u2192' + String(state.col) : '';
+  return state.col > 0 ? ' col:' + String(state.col) : '';
 }

@@ -14,7 +14,9 @@ export function matches(state: State): boolean {
 }
 
 export function render(state: State): string {
-  return bar(' \u2301tail' + diffSuffix(state) + colSuffix(state));
+  // green ASCII tick: font-safe (no glyph-set assumptions), green fg over
+  // the bar's reverse video, restored with \e[39m so reverse persists
+  return bar(' \u001b[32m*\u001b[39mtail' + diffSuffix(state) + colSuffix(state));
 }
 
 export const modal: StatusModal = { name: 'follow', matches, render };
