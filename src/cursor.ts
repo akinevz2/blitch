@@ -12,6 +12,8 @@ export interface Cursor {
   /** 1-based FILE line number — ghost rows are skipped (they do not exist
    * in the file; deletion damage is never forwarded to the editor) */
   readonly fileLine: number;
+  /** viewport top view row — for computing the cursor's screen row */
+  readonly viewportTop: number;
 }
 
 /** The cursor's view row: the tracked cursor, clamped into the viewport. */
@@ -35,7 +37,11 @@ function fileLineOf(s: State, viewRow: number): number {
 /** The modal monad reading the cursor out of the viewer state. */
 export function cursorMonad(): Modal<Cursor> {
   return modalBind(modalRead(), (s: State): Modal<Cursor> => {
-    const viewRow = cursorRow(s);
-    return { run: (): readonly [Cursor, State] => [{ viewRow, fileLine: fileLineOf(s, viewRow) }, s] };
+    const maxRow = Math.max(0, s.view.length - s.height);
+    const viewportTop = s.follow ? maxRow : Math.min(s.row, maxRow);
+    const viewRow = Math.max(viewportTop, Math.min(s.cursor >= 0 ? s.cursor : viewportTop + s.height - 1, Math.min(viewportTop + s.height - 1, s.view.length - 1)));
+    return {
+      run: (): readonly [Cursor, State] => [{ viewRow, fileLine: fileLineOf(s, viewRow), viewportTop }, s],
+    };
   });
 }

@@ -7,7 +7,7 @@ import { runView } from './runtime.ts';
 const cli = await createCLI({
   name: 'blitch',
   version: '0.2.0',
-  description: 'a diff for each stitch — live file viewer with colour-coded temporal diffing',
+  description: 'a diff for each stitch — live file viewer with colour-coded diff',
 });
 
 cli.command({

@@ -27,9 +27,9 @@ describe('editor kind detection', () => {
 });
 
 describe('editor argv shaping', () => {
-  test('vim-family opens at +line and scrolls it to the viewport top (zt)', () => {
-    expect(editorCommand('vim', 'f.txt', 42)).toEqual(['vim', '+42', '-c', 'normal! zt', 'f.txt']);
-    expect(editorCommand('nvim', 'f.txt', 7)).toEqual(['nvim', '+7', '-c', 'normal! zt', 'f.txt']);
+  test('vim-family opens at +line with viewport aligned via z{count}', () => {
+    expect(editorCommand('vim', 'f.txt', 42, 1)).toEqual(['vim', '+42', '-c', 'normal! z1\r', 'f.txt']);
+    expect(editorCommand('nvim', 'f.txt', 7, 5)).toEqual(['nvim', '+7', '-c', 'normal! z5\r', 'f.txt']);
   });
 
   test('vscode opens via --goto file:line', () => {
@@ -42,11 +42,12 @@ describe('editor argv shaping', () => {
 });
 
 describe('monadic editor program', () => {
-  test('reads the followed tail as the target line', () => {
+  test('reads the followed tail as the target line, viewport-aligned', () => {
     const s = initialState('f', LINES.join('\n'), 'sig', 10); // follows: last visible row 49
     const [invocation] = editorProgram('vim', 'f.txt').run(s);
     expect(invocation.line).toBe(50); // the ultimate visible line, 1-based
-    expect(invocation.argv).toEqual(['vim', '+50', '-c', 'normal! zt', 'f.txt']);
+    // cursor sits on the LAST screen row of a 10-row viewport: z10
+    expect(invocation.argv).toEqual(['vim', '+50', '-c', 'normal! z10\r', 'f.txt']);
   });
 
   test('reads a manual scroll position unfollowed (cursor = last visible row)', () => {

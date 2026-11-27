@@ -28,13 +28,13 @@ export function editorKind(editor: string): EditorKind {
   return 'generic';
 }
 
-/** The argv that opens `file` at `line` (1-based) for this editor kind. */
-export function editorCommand(editor: string, file: string, line: number): readonly string[] {
+/** The argv that opens `file` at `line` (1-based) for this editor kind,
+ * aligning vim's viewport so the cursor line sits at the same SCREEN row
+ * blitch showed it at (`z{count}<CR>` — count = 1-based screen line). */
+export function editorCommand(editor: string, file: string, line: number, screenRow: number = 1): readonly string[] {
   const kind = editorKind(editor);
   if (kind === 'vim-family') {
-    // +line puts the cursor on the line; `normal! zt` then scrolls that
-    // line to the TOP of vim's window — preserving blitch's viewport offset
-    return [editor, '+' + String(line), '-c', 'normal! zt', file];
+    return [editor, '+' + String(line), '-c', 'normal! z' + String(Math.max(1, screenRow)) + '\r', file];
   }
   if (kind === 'vscode') {
     return [editor, '--goto', `${file}:${line}`];
@@ -48,6 +48,8 @@ export interface EditorInvocation {
   readonly argv: readonly string[];
 }
 
+export type { Cursor } from './cursor.ts';
+
 /**
  * The monadic editor program: reads the current viewer state and produces
  * the invocation — opening the editor at the FILE line under the viewport
@@ -57,6 +59,11 @@ export interface EditorInvocation {
  */
 export function editorProgram(editor: string, file: string): Modal<EditorInvocation> {
   return modalBind(cursorMonad(), (cursor: Cursor): Modal<EditorInvocation> => {
-    return modalOf({ kind: editorKind(editor), line: cursor.fileLine, argv: editorCommand(editor, file, cursor.fileLine) });
+    const screenRow = cursor.viewRow - cursor.viewportTop + 1; // 1-based screen line
+    return modalOf({
+      kind: editorKind(editor),
+      line: cursor.fileLine,
+      argv: editorCommand(editor, file, cursor.fileLine, screenRow),
+    });
   });
 }
