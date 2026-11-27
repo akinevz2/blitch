@@ -185,15 +185,20 @@ function lcsOps(a: string, b: string): readonly DiffOp[] {
 export function projectView(
   oldText: string,
   newText: string,
-  prior: Readonly<Record<string, DiffKind>> = {},
-): { view: readonly ViewLine[]; damage: Readonly<Record<string, DiffKind>> } {
+  prior: { damage: Readonly<Record<number, DiffKind>>; lineIds: readonly number[] } = { damage: {}, lineIds: [] },
+): { view: readonly ViewLine[]; damage: Readonly<Record<number, DiffKind>>; lineIds: readonly number[] } {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   if (oldText.length === 0) {
     return {
-      view: newLines.map((line: string): ViewLine => ({ segs: [{ text: line, kind: 'same' }], ghost: false })),
+      view: newLines.map((line: string, id: number): ViewLine => ({ segs: [{ text: line, kind: 'same' }], ghost: false, id })),
       damage: {},
+      lineIds: newLines.map((_l: string, i: number): number => i),
     };
+  }
+  let nextId = 0;
+  for (const id of prior.lineIds) {
+    if (id !== undefined && id >= nextId) nextId = id + 1;
   }
 
   const nOld = oldLines.length;
@@ -239,23 +244,39 @@ export function projectView(
     }
   }
 
-  // build new-side rows
+  // build new-side rows with identity: kept lines INHERIT their old id,
+  // changed lines get fresh ids
   const rows: ViewLine[] = [];
   const addedSet = new Set(added);
+  const idByNew = new Map<number, number>();
   for (let i = 0; i < nNew; i += 1) {
     const line = newLines[i] ?? '';
-    if (addedSet.has(i)) {
-      rows.push({ segs: [{ text: line, kind: 'add' }], ghost: false });
-    } else {
-      rows.push({ segs: [{ text: line, kind: 'same' }], ghost: false });
-    }
+    let id: number;
+    if (i < p) id = prior.lineIds[i] ?? nextId++;               // prefix: direct
+    else if (i >= nm) id = prior.lineIds[i + (nOld - nNew)] ?? nextId++; // suffix: end-aligned
+    else id = nextId++;                                          // middle: refined below
+    idByNew.set(i, id);
+    rows.push({ segs: [{ text: line, kind: addedSet.has(i) ? 'add' : 'same' }], ghost: false, id });
+  }
+  // middle survivors inherit the old middle's surviving ids in order
+  const oldMiddleKept: number[] = [];
+  for (let i = p; i < om; i += 1) if (!deleted.includes(i)) oldMiddleKept.push(i);
+  let ptr = 0;
+  for (let i = p; i < nm; i += 1) {
+    if (addedSet.has(i)) continue;
+    const oldIdx = oldMiddleKept[ptr] ?? i;
+    ptr += 1;
+    const id = prior.lineIds[oldIdx] ?? nextId++;
+    idByNew.set(i, id);
+    rows[i] = { segs: rows[i]?.segs ?? [], ghost: false, id };
   }
 
   // pair additions with deletions by POSITION PROXIMITY (nearest unused
-  // index), not by order — mid-line edits must pair with their own previous
-  // version, never spawn ghosts for other lines' deletions
+  // index) — mid-line edits pair with their own previous version and never
+  // spawn ghosts for other lines' deletions
   const pairCount = Math.min(added.length, deleted.length);
   const usedDeleted = new Set<number>();
+  const pairs: Array<readonly [number, number]> = [];
   for (const addIdx of added.slice(0, pairCount)) {
     let best = -1;
     let bestDist = Number.MAX_SAFE_INTEGER;
@@ -268,35 +289,29 @@ export function projectView(
       }
     }
     if (best >= 0) usedDeleted.add(best);
-    const delLine = oldLines[best] ?? '';
+    pairs.push([addIdx, best]);
+  }
+  for (const [addIdx, delIdx] of pairs) {
+    const delLine = delIdx >= 0 ? (oldLines[delIdx] ?? '') : '';
     const addLine = newLines[addIdx] ?? '';
-    rows[addIdx] = { segs: diffText(delLine, addLine), ghost: false };
+    // a paired (edited) line IS the same logical line: inherit the previous
+    // identity so repeated edits never stack in the damage memo
+    const inherited = delIdx >= 0 ? prior.lineIds[delIdx] : undefined;
+    const id = inherited ?? idByNew.get(addIdx) ?? nextId++;
+    idByNew.set(addIdx, id);
+    rows[addIdx] = { segs: diffText(delLine, addLine), ghost: false, id };
   }
   const unpairedDeleted = deleted.filter((d: number): boolean => !usedDeleted.has(d));
 
-  // damage accumulation: session-long memo folded through every update
-  const damage: Record<string, DiffKind> = { ...prior };
-  const accumulate = (content: string, kind: DiffKind): void => {
-    if (kind === 'same') return;
-    const prev = damage[content] ?? 'same';
-    damage[content] = prev === 'same' || prev === kind ? kind : 'repl';
-  };
-  for (const addIdx of added) {
-    accumulate(newLines[addIdx] ?? '', 'add');
-  }
-  for (const delIdx of deleted) {
-    accumulate(oldLines[delIdx] ?? '', 'del');
-  }
-  // paired (replacement) lines: their damage kind is repl — add wins over
-  // the del just recorded for the same content pair
-  for (const addIdx of added.slice(0, pairCount)) {
-    accumulate(newLines[addIdx] ?? '', 'repl');
-  }
-  // ghosts anchored before the line that now precedes them
+  // ghosts splice in (ascending anchors), carrying their dead line's id
   const ghostsByAnchor = new Map<number, ViewLine[]>();
   for (const delIdx of unpairedDeleted) {
     const anchor = Math.min(delIdx, nNew - 1);
-    const ghost: ViewLine = { segs: [{ text: oldLines[delIdx] ?? '', kind: 'del' }], ghost: true };
+    const ghost: ViewLine = {
+      segs: [{ text: oldLines[delIdx] ?? '', kind: 'del' }],
+      ghost: true,
+      id: prior.lineIds[delIdx] ?? nextId++,
+    };
     const list = ghostsByAnchor.get(anchor) ?? [];
     list.push(ghost);
     ghostsByAnchor.set(anchor, list);
@@ -304,5 +319,31 @@ export function projectView(
   for (const [anchor, ghosts] of ghostsByAnchor) {
     rows.splice(anchor, 0, ...ghosts);
   }
-  return { view: rows, damage };
+
+  // damage accumulation: session-long memo keyed by STABLE LINE ID — one
+  // entry per line; edits on the same line merge (never stack). Paired
+  // lines record a single repl on their new id: the replacement subsumes
+  // the deletion of its previous version.
+  const damage: Record<number, DiffKind> = { ...prior.damage };
+  const mergeKind = (a: DiffKind, b: DiffKind): DiffKind => {
+    if (a === 'same') return b;
+    if (b === 'same') return a;
+    return 'repl'; // any overlap of add/del/repl escalates to repl
+  };
+  const accumulate = (id: number, kind: DiffKind): void => {
+    damage[id] = mergeKind(damage[id] ?? 'same', kind);
+  };
+  for (const delIdx of unpairedDeleted) {
+    accumulate(prior.lineIds[delIdx] ?? nextId++, 'del');
+  }
+  const pairedAdds = new Set(pairs.map(([a]: readonly [number, number]) => a));
+  for (const [addIdx] of pairs) {
+    accumulate(idByNew.get(addIdx) ?? nextId++, 'repl');
+  }
+  for (const addIdx of added) {
+    if (!pairedAdds.has(addIdx)) accumulate(idByNew.get(addIdx) ?? nextId++, 'add');
+  }
+
+  const lineIds = newLines.map((_l: string, i: number): number => idByNew.get(i) ?? nextId++);
+  return { view: rows, damage, lineIds };
 }

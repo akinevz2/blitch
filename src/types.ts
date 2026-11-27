@@ -15,6 +15,8 @@ export interface Seg {
 export interface ViewLine {
   readonly segs: readonly Seg[];
   readonly ghost: boolean;
+  /** stable line identity: the damage memo and editor targeting key on it */
+  readonly id: number;
 }
 
 export type NamedKey =
@@ -86,8 +88,12 @@ export interface State {
   readonly cycle: number;
   readonly search: SearchState;
   readonly cmd: CmdState;
-  /** session-long per-line damage memo (blitted across updates) */
-  readonly damage: Readonly<Record<string, DiffKind>>;
+  /** session-long damage memo, keyed by stable LINE ID (not content —
+   * duplicate lines must never share damage): one entry per line, edits
+   * on the same line merge (never stack) */
+  readonly damage: Readonly<Record<number, DiffKind>>;
+  /** stable identity per FILE line (ghosts excluded — parallel to text) */
+  readonly lineIds: readonly number[];
   /** cached current input scheme; kept in lockstep by the mode transitions */
   readonly scheme: InputScheme;
   /** event generation: bumped on every scheme entry; stale-batch guards */

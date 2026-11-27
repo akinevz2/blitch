@@ -32,12 +32,14 @@ export function consumeBar(outputs: readonly OutputEvent[]): string | null {
 }
 
 export function initialState(file: string, text: string, sig: string, height: number): State {
+  const boot = projectView('', text);
   return {
     sig,
     oldText: '',
     text,
-    view: projectView('', text).view,
+    view: boot.view,
     damage: {},
+    lineIds: boot.lineIds,
     row: 0,
     col: 0,
     follow: true,
@@ -93,7 +95,7 @@ export function damagedRows(s: State): readonly number[] {
       out.push(r);
       continue;
     }
-    const memo = s.damage[lineText(vl.segs)];
+    const memo = s.damage[vl.id];
     if (memo && memo !== 'same') out.push(r);
   }
   return out;
@@ -329,9 +331,17 @@ export function projectFileEvents(events: readonly InputEvent[], currentSig: str
 
 function onFileUpdate(event: InputEvent & { t: 'file' }, s: State): Transition {
   if (event.sig === s.sig) return { state: s, outputs: [] };
-  const projection = projectView(s.text, event.text, s.damage);
+  const projection = projectView(s.text, event.text, { damage: s.damage, lineIds: s.lineIds });
   const view = projection.view;
-  const next: State = { ...s, sig: event.sig, oldText: s.text, text: event.text, view, damage: { ...projection.damage } };
+  const next: State = {
+    ...s,
+    sig: event.sig,
+    oldText: s.text,
+    text: event.text,
+    view,
+    damage: { ...projection.damage },
+    lineIds: projection.lineIds,
+  };
   const withFollow: State = next.follow ? { ...next, row: Math.max(0, view.length - s.height) } : { ...next, row: clamp(next.row, 0, maxRow(next)) };
   return { state: withFollow, outputs: [] };
 }

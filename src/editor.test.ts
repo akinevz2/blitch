@@ -43,17 +43,17 @@ describe('editor argv shaping', () => {
 
 describe('monadic editor program', () => {
   test('reads the followed tail as the target line', () => {
-    const s = initialState('f', LINES.join('\n'), 'sig', 10); // follows: viewport top row 40
+    const s = initialState('f', LINES.join('\n'), 'sig', 10); // follows: last visible row 49
     const [invocation] = editorProgram('vim', 'f.txt').run(s);
-    expect(invocation.line).toBe(41); // 1-based
-    expect(invocation.argv).toEqual(['vim', '+41', '-c', 'normal! zt', 'f.txt']);
+    expect(invocation.line).toBe(50); // the ultimate visible line, 1-based
+    expect(invocation.argv).toEqual(['vim', '+50', '-c', 'normal! zt', 'f.txt']);
   });
 
-  test('reads a manual scroll position unfollowed', () => {
+  test('reads a manual scroll position unfollowed (cursor = last visible row)', () => {
     const s = initialState('f', LINES.join('\n'), 'sig', 10);
     const moved = { ...s, row: 12, follow: false };
     const [invocation] = editorProgram('code', 'f.txt').run(moved);
-    expect(invocation.line).toBe(13);
-    expect(invocation.argv).toEqual(['code', '--goto', 'f.txt:13']);
+    expect(invocation.line).toBe(22); // rows 12..21 visible; cursor on 21 -> line 22
+    expect(invocation.argv).toEqual(['code', '--goto', 'f.txt:22']);
   });
 });

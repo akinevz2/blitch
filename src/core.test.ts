@@ -487,18 +487,17 @@ describe('diff semantics', () => {
     expect(view.every((v) => v.segs.every((s) => s.kind === 'same'))).toBe(true);
   });
 
-  test('damage accumulates across saves (session-long memo)', () => {
-    // line c is edited, then later restored to its original content — the
-    // damage marker must persist (blitted memo), not fade on the clean save
+  test('damage accumulates across saves (session-long memo, id-keyed)', () => {
+    // the c-line is edited, then edited back — same line identity (id 2),
+    // so the damage merges and e_wc-style dedup never stacks
     const first = projectView('a\nb\nc', 'a\nb\nC'); // c damaged
-    expect(first.damage.C).toBe('repl'); // new content: replacement rope
-    expect(first.damage.c).toBe('del'); // old content: deleted
-    const second = projectView('a\nb\nC', 'a\nb\nc', first.damage); // edited back: repl + del -> repl
-    expect(second.damage.c).toBe('repl');
-    const third = projectView('a\nb\nC', 'a\nb\nc', second.damage);
-    expect(third.damage.c).toBe('repl'); // still damaged
+    expect(first.damage[2]).toBe('repl'); // keyed by stable line id
+    expect(first.lineIds).toEqual([0, 1, 2]); // the edited line kept its identity
+    const second = projectView('a\nb\nC', 'a\nb\nc', { damage: first.damage, lineIds: first.lineIds });
+    expect(second.damage[2]).toBe('repl'); // merged, NOT stacked into a new entry
+    expect(Object.keys(second.damage).length).toBe(1); // one line: one contribution
     // a later save that does NOT touch the line: clean segs in the diff...
-    const clean = projectView('a\nb\nc', 'a\nb\nc', third.damage);
+    const clean = projectView('a\nb\nc', 'a\nb\nc', { damage: second.damage, lineIds: second.lineIds });
     expect(clean.view[2]?.segs.every((s) => s.kind === 'same')).toBe(true);
     // ...but the accumulated damage is still rendered by renderFrame
     const base = initialState('f', 'a\nb\nC', 'sig', 10);
@@ -506,11 +505,11 @@ describe('diff semantics', () => {
     expect(frame).toContain('\u001b[33m'); // memo overlay still yellow
   });
 
-  test('editor target line excludes ghost rows (deletion damage not forwarded)', () => {
+  test('editor target line is the ULTIMATE visible line, ghosts excluded', () => {
     const s = initialState('f', 'a\nb\nc\nd\ne', 'sig', 10);
-    const scrolled = { ...s, row: 3, follow: false }; // view row 3 = 'd' (file line 4)
+    const scrolled = { ...s, row: 3, follow: false }; // rows 3..4 visible; cursor on row 4 = 'e'
     const [invocation] = editorProgram('vim', 'f.txt').run(scrolled);
-    expect(invocation.line).toBe(4);
+    expect(invocation.line).toBe(5); // the ultimate visible file line
   });
 
   test('bottom bar is a monoidal consumer: live prompt, wiped when inactive', () => {

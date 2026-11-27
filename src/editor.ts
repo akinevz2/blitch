@@ -3,7 +3,8 @@
 // description (pure data). The runtime is the interpreter: it executes the
 // argv and resumes the TUI. Nothing here touches the world.
 
-import { modalBind, modalOf, modalRead, type Modal } from './modal.ts';
+import { modalBind, modalOf, type Modal } from './modal.ts';
+import { cursorMonad, type Cursor } from './cursor.ts';
 import type { State } from './types.ts';
 
 export type EditorKind = 'vim-family' | 'vscode' | 'generic';
@@ -55,14 +56,7 @@ export interface EditorInvocation {
  * damage is never forwarded to the editor).
  */
 export function editorProgram(editor: string, file: string): Modal<EditorInvocation> {
-  return modalBind(modalRead(), (s: State): Modal<EditorInvocation> => {
-    const topRow = s.follow ? Math.max(0, s.view.length - s.height) : s.row;
-    let fileLine = 0;
-    for (let r = 0; r < topRow; r += 1) {
-      const vl = s.view[r];
-      if (vl && !vl.ghost) fileLine += 1;
-    }
-    const line = fileLine + 1; // 1-based editor line
-    return modalOf({ kind: editorKind(editor), line, argv: editorCommand(editor, file, line) });
+  return modalBind(cursorMonad(), (cursor: Cursor): Modal<EditorInvocation> => {
+    return modalOf({ kind: editorKind(editor), line: cursor.fileLine, argv: editorCommand(editor, file, cursor.fileLine) });
   });
 }

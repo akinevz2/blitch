@@ -89,7 +89,7 @@ export function renderFrame(state: State): string {
   for (let i = row; i < row + height && i < state.view.length; i += 1) {
     const vl = state.view[i];
     if (!vl) continue;
-    const mem = vl.segs.every((sg) => sg.kind === 'same') ? state.damage[lineText(vl.segs)] : undefined;
+    const mem = vl.segs.every((sg) => sg.kind === 'same') ? state.damage[vl.id] : undefined;
     const effective = mem && mem !== 'same'
       ? { ...vl, segs: vl.segs.map((sg) => ({ ...sg, kind: mem })) }
       : vl;

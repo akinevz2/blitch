@@ -142,10 +142,10 @@ describe('normal modal', () => {
       ...base,
       follow: false,
       view: [
-        { segs: [{ text: 'kept', kind: 'same' }], ghost: false },
-        { segs: [{ text: 'new', kind: 'add' }], ghost: false },
-        { segs: [{ text: 'old', kind: 'del' }], ghost: true },
-        { segs: [{ text: 'was\u0000now', kind: 'repl' }], ghost: false },
+        { segs: [{ text: 'kept', kind: 'same' }], ghost: false, id: 0 },
+        { segs: [{ text: 'new', kind: 'add' }], ghost: false, id: 1 },
+        { segs: [{ text: 'old', kind: 'del' }], ghost: true, id: 2 },
+        { segs: [{ text: 'now', kind: 'repl' }], ghost: false, id: 3 },
       ],
     };
     expect(renderStatusBar(changed)).toBe('\u001b[7mblitch: d_wc(+1,-1) d_rc(~1)\u001b[0m');
