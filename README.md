@@ -1,5 +1,10 @@
 # Blitch, a diff for each stitch
 
+> **Work in progress.** This repo is public for curious eyes — the design is
+> settling (event-driven core, monoidal bar consumers, status modal package)
+> and history is being tracked one-commit-per-feature. Expect churn; the
+> known-issue catalog lives in [FAILURE-MODES.md](FAILURE-MODES.md).
+
 Blitch is a command line tool that performs pager-like function of viewing a file live in the terminal with the added bonus of performing inotify-livereloading of the file's contents, with automatic ASCII colour-based visualisation of areas of the file that were modified due to addition, deletion, or replacement, kind of like a diff, but displaying temporal markers indicating areas of high entropy, rather than providing a single before/after blob.
 
 ## Implementation (Bun + bunli, standalone binary)
